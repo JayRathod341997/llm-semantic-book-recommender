@@ -1,14 +1,11 @@
 import pandas as pd
 import numpy as np
-from dotenv import load_dotenv
 import streamlit as st
+import os
 
-from langchain_community.document_loaders import TextLoader
 from langchain_openai import OpenAIEmbeddings
-from langchain_text_splitters import CharacterTextSplitter
 from langchain_chroma import Chroma
 
-load_dotenv()
 path = 'data/'
 books = pd.read_csv(f"{path}books_with_emotions.csv")
 books["large_thumbnail"] = books["thumbnail"] + "&fife=w800"
@@ -18,10 +15,17 @@ books["large_thumbnail"] = np.where(
     books["large_thumbnail"],
 )
 
-db_books = Chroma(
-    persist_directory="./chroma_books_db",
-    embedding_function=OpenAIEmbeddings()
-)
+# Initialize db_books as None, will be set after API key is provided
+db_books = None
+
+
+def initialize_chroma(openai_api_key):
+    """Initialize the Chroma database with the provided OpenAI API key"""
+    os.environ["OPENAI_API_KEY"] = openai_api_key
+    return Chroma(
+        persist_directory="./chroma_books_db",
+        embedding_function=OpenAIEmbeddings()
+    )
 
 
 def retrieve_semantic_recommendations(
@@ -31,6 +35,9 @@ def retrieve_semantic_recommendations(
         initial_top_k: int = 50,
         final_top_k: int = 16,
 ) -> pd.DataFrame:
+    if db_books is None:
+        raise ValueError("OpenAI API key not provided. Please enter your API key.")
+
     recs = db_books.similarity_search(query, k=initial_top_k)
     books_list = [int(rec.page_content.strip('"').split()[0]) for rec in recs]
     book_recs = books[books["isbn13"].isin(books_list)].head(initial_top_k)
@@ -85,6 +92,29 @@ def main():
 
     # Sidebar for inputs
     with st.sidebar:
+        st.header("API Configuration")
+
+        # OpenAI API key input
+        openai_api_key = st.text_input(
+            "OpenAI API Key:",
+            type="password",
+            placeholder="Enter your OpenAI API key",
+            help="Get your API key from https://platform.openai.com/api-keys"
+        )
+
+        # Initialize Chroma when API key is provided
+        global db_books
+        if openai_api_key:
+            try:
+                db_books = initialize_chroma(openai_api_key)
+                st.success("✅ API key validated and Chroma database initialized!")
+            except Exception as e:
+                st.error(f"❌ Error initializing Chroma: {str(e)}")
+        else:
+            st.info("🔑 Please enter your OpenAI API key to get started")
+
+        st.divider()
+
         st.header("Search Criteria")
         user_query = st.text_input(
             "Describe the book you're looking for:",
@@ -105,29 +135,36 @@ def main():
             index=0
         )
 
-        submit_button = st.button("Find Recommendations")
+        submit_button = st.button("Find Recommendations", disabled=not openai_api_key)
 
     # Main content area
     st.header("Recommendations")
 
-    if submit_button and user_query:
-        with st.spinner("Finding recommendations..."):
-            results = recommend_books(user_query, category_dropdown, tone_dropdown)
-
-        if results:
-            # Display books in a grid
-            cols = st.columns(4)  # 4 columns for the grid
-
-            for i, (image_url, caption) in enumerate(results):
-                col_idx = i % 4
-                with cols[col_idx]:
-                    st.image(image_url, use_container_width=True)  # Fixed parameter
-                    st.caption(caption)
+    if submit_button:
+        if not openai_api_key:
+            st.error("Please enter your OpenAI API key first.")
+        elif not user_query:
+            st.error("Please enter a book description to search.")
         else:
-            st.warning("No books found matching your criteria.")
+            try:
+                with st.spinner("Finding recommendations..."):
+                    results = recommend_books(user_query, category_dropdown, tone_dropdown)
 
-    elif submit_button and not user_query:
-        st.error("Please enter a book description to search.")
+                if results:
+                    # Display books in a grid
+                    cols = st.columns(4)  # 4 columns for the grid
+
+                    for i, (image_url, caption) in enumerate(results):
+                        col_idx = i % 4
+                        with cols[col_idx]:
+                            st.image(image_url, use_container_width=True)
+                            st.caption(caption)
+                else:
+                    st.warning("No books found matching your criteria.")
+
+            except Exception as e:
+                st.error(f"Error retrieving recommendations: {str(e)}")
+                st.info("Please check your API key and try again.")
 
 
 if __name__ == "__main__":
