@@ -125,3 +125,10 @@ llm-semantic-book-recommender/
    - Explore book recommendations by entering descriptive queries and selecting emotional tones or categories.
    - Enjoy discovering new books tailored to your preferences!
      
+## 🧑‍🎓 Author
+
+**👨‍💻 Jay Rathod**  
+*Software Engineer | AI & ML Trainer*  
+📍 Ahmedabad, India  
+
+🔗 [LinkedIn](https://www.linkedin.com/in/rathodjay3497/) | [GitHub](https://github.com/JayRathod341997)
